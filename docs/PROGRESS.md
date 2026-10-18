@@ -85,6 +85,26 @@ PASS  空位赏金各 +1 — [0,0,0,1,1,1]
 
 ## 环境与操作备忘
 
+### 本地开发怎么跑
+
+```bash
+# 终端 1：房间服务
+pnpm dev:room          # wrangler dev，127.0.0.1:8787
+
+# 终端 2：前端
+pnpm dev               # vite，5173
+```
+
+Vite 已配置 `/parties` 的 WebSocket 代理到 8787（见 `vite.config.ts`），因此浏览器里
+`location.origin` 可以直接用作房间地址，不需要额外配环境变量。
+
+```bash
+# 端到端（需先起 dev:room）
+pnpm e2e
+# 也可以指定走 Vite 代理：
+ANPAI_ORIGIN=http://localhost:5173 pnpm e2e
+```
+
 - **`wrangler dev` 在本机沙箱下需要覆盖 `HOME`**：它硬编码写 `~/Library/Preferences/.wrangler`，沙箱拒绝后会直接退出。绕过方式：`HOME=<可写临时目录> npx wrangler dev`。
 - **DO 状态会持久化在 `.wrangler/state`**（已 gitignore）。测试用固定房间码会读到历史日志。
 - **TypeScript 固定在 5.9**：`vue-tsc@3.3.13` 依赖 TS 的 `./lib/tsc` 子路径导出，TS 7 已移除，升级会导致 `typecheck` 崩溃。
