@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   server: {
+    host: '0.0.0.0',
     port: 5188,
     allowedHosts: true,
     // 开发时前端在 Vite，房间服务在 wrangler（8787）。
