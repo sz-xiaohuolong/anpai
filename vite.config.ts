@@ -5,6 +5,8 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   server: {
+    port: 5188,
+    allowedHosts: true,
     // 开发时前端在 Vite，房间服务在 wrangler（8787）。
     // 把 /parties 连同 WebSocket 一起代理过去，客户端才能直接用 location.origin。
     proxy: {
