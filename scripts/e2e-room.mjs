@@ -118,6 +118,29 @@ async function main() {
   const seqSets = clients.map((c) => c.events.map((e) => e.seq).join(','))
   check('三个客户端的日志序号序列一致', new Set(seqSets).size === 1, seqSets[0]?.slice(0, 40))
 
+  // 5b. 真实网络日志 → 纯函数投影：三个客户端必须算出同一局面
+  await sleep(600)
+  const { project } = await import('../src/core/rules.ts')
+  const projections = clients.map((c) => project(c.events))
+  const scores = projections.map((s) =>
+    Object.fromEntries(s.players.map((p) => [p.nickname, p.score])),
+  )
+  const same = JSON.stringify(scores[0]) === JSON.stringify(scores[1]) &&
+               JSON.stringify(scores[1]) === JSON.stringify(scores[2])
+  check('三个客户端投影出的局面一致', same, JSON.stringify(scores[0]))
+
+  const settled = projections[0].rounds[0]?.settled === true
+  check('第 1 轮已结算', settled)
+
+  // 3 人 6 格，位 0/1/2 各被独占一次（基础 4/4/5）；位 3/4/5 空置 → 赏金 +1
+  const expected = { ann: 4, bob: 4, cyn: 5 }
+  const actual = scores[0] ?? {}
+  const scoresOk = ['ann','bob','cyn'].every((n) => actual[n] === expected[n])
+  check('结算分数正确（4 / 4 / 5）', scoresOk, JSON.stringify(actual))
+
+  const bounty = projections[0].rounds[0]?.bountyAfter ?? []
+  check('空位赏金各 +1', bounty[3] === 1 && bounty[4] === 1 && bounty[5] === 1, JSON.stringify(bounty))
+
   // 6. 服务器下发的日志无缺口
   const seqs = clients[0].events.map((e) => e.seq).sort((a, b) => a - b)
   const contiguous = seqs.every((s, i) => i === 0 || s === seqs[i - 1] + 1)

@@ -51,6 +51,25 @@ export function randomNonceHex(): string {
   return toHex(bytes)
 }
 
+/** 生成 16 字节随机席位令牌（存入 localStorage，明文永不进日志）。 */
+export function randomSeatToken(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return toHex(bytes)
+}
+
+/**
+ * 由席位令牌派生公开席位 ID。
+ *
+ * 日志里只出现 seatId，绝不出现 seatToken —— 否则任何人都能冒用他人席位。
+ * 见 docs/game-architecture-v1.md §6。
+ */
+export async function deriveSeatId(seatToken: string): Promise<string> {
+  const data = new TextEncoder().encode(`anpai-seat:${seatToken}`)
+  const digest = await crypto.subtle.digest('SHA-256', data)
+  return `seat-${toHex(new Uint8Array(digest)).slice(0, 16)}`
+}
+
 /** nonce 必须是 32 位小写十六进制。 */
 export function isValidNonceHex(nonceHex: string): boolean {
   return new RegExp(`^[0-9a-f]{${NONCE_HEX_LENGTH}}$`).test(nonceHex)
