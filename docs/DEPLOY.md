@@ -5,6 +5,8 @@
 - workers.dev 子域：`xiaohuolong`
 - 线上地址：`https://anpai.xiaohuolong.workers.dev`
 - 首次部署：2026-10-18 11:49 UTC，版本 `caa76cec-d886-48d2-b66b-5e228672dfcd`
+- 最近更新：2026-10-18 21:17 (UTC+8)，版本 `32b1f2f0-50c3-487a-b477-58fe21fa2a79`
+  （部署 `070a94fd-c374-4972-8339-b524e48829c1`；含机器人均衡策略重写。已核实线上 JS 与本地 `dist` 逐字节一致）
 
 ## 当前状态：部署成功，但中国大陆网络不可达
 
@@ -80,6 +82,35 @@ pnpm run deploy
        -u https_proxy -u http_proxy -u all_proxy -u NODE_USE_ENV_PROXY \
        pnpm run deploy
    ```
+
+**用 API Token 部署（2026-10-18 实测）**：本机 `wrangler login` 的 OAuth 令牌会过期，且非交互环境无法刷新。改用 Token：
+
+```bash
+# Token 只注入本命令，不要写进任何文件
+env -u HTTPS_PROXY -u HTTP_PROXY -u ALL_PROXY \
+    -u https_proxy -u http_proxy -u all_proxy -u NODE_USE_ENV_PROXY \
+    CLOUDFLARE_API_TOKEN=<Token> \
+    CLOUDFLARE_ACCOUNT_ID=43c6be0217dc7e0e3c8fc0eaf4a90ef2 \
+    pnpm run deploy
+```
+
+**Token 必须这么配（两个实测坑，错一个就部署失败）：**
+
+1. **权限**：`Account → Workers Scripts → Edit`。只读 Token 会在「资产上传」阶段报
+   `No access to the specified resource.`（没有单独的 Assets 权限组，就是 Workers Scripts: Edit）。
+2. **作用域**：Account Resources 必须 **Include 本账户**（`Szxiaohuolong@gmail.com's Account`）。
+   选错账户时 `GET /accounts` 返回空、wrangler 报「Failed to automatically retrieve account IDs」；
+   此时显式设 `CLOUDFLARE_ACCOUNT_ID` 可跳过检测，但部署仍会因无权而失败。
+   最快路径：用模板 **「Edit Cloudflare Workers」** 创建。
+3. **Token 出现在对话记录里就算已泄露**：部署完在控制台删除或轮换。
+
+**线上核实（本机被 SNI 阻断，用外部抓取）**：
+
+```bash
+curl -s -H "X-Return-Format: html" "https://r.jina.ai/https://anpai.xiaohuolong.workers.dev/"
+# 与本地 dist 比对资源 hash；再抓 JS 比对内容：
+curl -s "https://r.jina.ai/https://anpai.xiaohuolong.workers.dev/assets/<js名>"
+```
 
 ## 其他备忘
 
