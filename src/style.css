@@ -1,0 +1,35 @@
+@import 'tailwindcss';
+
+/* 设计 token，来源：docs/game-ui-v1.md §2.1 */
+@theme {
+  --color-felt: #101310;
+  --color-felt-raised: #191d18;
+  --color-hairline: #2b3129;
+  --color-card: #f4f0e6;
+  --color-card-ink: #1a1a17;
+  --color-card-ink-dim: #6b6a62;
+  --color-text: #e9ede6;
+  --color-text-dim: #8b9288;
+  --color-bounty: #e8a33d;
+  --color-capture: #4fa97a;
+  --color-collide: #d2564f;
+  --color-focus: #7fb2e8;
+
+  --font-sans:
+    'Inter', 'Noto Sans SC', 'PingFang SC', system-ui, -apple-system, sans-serif;
+  --font-numeric: 'Archivo', 'Inter', system-ui, sans-serif;
+}
+
+html,
+body {
+  margin: 0;
+  background-color: var(--color-felt);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.tnum {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+}
