@@ -70,9 +70,18 @@ async function main() {
   for (const name of names) clients.push(await makeClient(name))
   check('三个客户端进房并收到 welcome + 全量日志', clients.every((c) => c.logReceived))
 
-  // 全员准备 → 自动开局
+  // 全员准备 → 自动开局。
+  // 不用固定 sleep：机器负载高时它会漏掉轮次，让测试变成随机失败。
+  const waitForPhase = async (label, predicate, tries = 120) => {
+    for (let i = 0; i < tries; i++) {
+      if (predicate(project(clients[0].events))) return
+      await sleep(250)
+    }
+    throw new Error(`等待超时：${label}`)
+  }
+
   for (const c of clients) c.ws.send(JSON.stringify({ t: 'ready', ready: true }))
-  await sleep(1200)
+  await waitForPhase('第 1 轮进入提交阶段', (s) => s.phase === 'COMMITTING' && s.round === 1)
   const opens = clients[0].events.filter((e) => e.type === 'ROUND_OPEN')
   check('全员准备后自动开局（收到 ROUND_OPEN）', opens.length === 1, `opens=${opens.length}`)
 
@@ -131,12 +140,12 @@ async function main() {
     JSON.stringify(firstProjection.rounds[0].bountyAfter),
   )
 
-  // 打满 8 轮
+  // 打满 8 轮：每轮都等到真正进入提交阶段再操作
   for (let round = 2; round <= ROUNDS; round++) {
-    await sleep(INTERMISSION_MS + 400)
+    await waitForPhase(`第 ${round} 轮进入提交阶段`, (s) => s.phase === 'COMMITTING' && s.round === round)
     await playRound(round)
   }
-  await sleep(800)
+  await waitForPhase('第 8 轮结算完成', (s) => s.phase === 'GAME_OVER')
 
   const finished = clients.map((c) => project(c.events))
   const scoreOf = (s) => JSON.stringify(s.players.map((p) => p.score))

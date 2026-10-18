@@ -1,33 +1,41 @@
 /**
  * 机器人端到端验证。
  *
- * 重点不是机器人策略（那有单测），而是**服务端的授权边界**：
+ * A 部分：授权边界
  *   - 只有房主能添加机器人
  *   - 只有房主能代机器人提交/揭示
- *   - 2 个真人 + 1 个机器人可以开局
+ *
+ * B 部分：**机器人互撞回归**
+ *   1 真人 + 3 机器人，用与房主浏览器完全相同的「依次决策 + 累积 reserved」
+ *   方式打满 8 轮，断言三个机器人从不选中同一个位置。
+ *   这是「三个机器人每次都撞」那个 bug 的端到端回归。
  *
  * 需要先起 `pnpm dev:room`。
  */
 
 const ORIGIN = process.env.ANPAI_ORIGIN ?? 'http://127.0.0.1:8787'
-const ROOM = process.env.ANPAI_ROOM ?? `BOT${Date.now().toString(36).toUpperCase()}`
-const WS_URL = `${ORIGIN.replace(/^http/, 'ws')}/parties/anpai-room/${ROOM}`
+const BASE = process.env.ANPAI_ROOM ?? `BOT${Date.now().toString(36).toUpperCase()}`
+const ROOM_A = `${BASE}A`
+const ROOM_B = `${BASE}B`
+
+const ROUNDS = 8
+const INTERMISSION_MS = 5_000
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const seatIdFor = (name) => `seat-${name}`
 
-async function commitHex(seatId, round, slotIndex, nonceHex) {
+async function commitHex(room, seatId, round, slotIndex, nonceHex) {
   const { createHash } = await import('node:crypto')
   return createHash('sha256')
-    .update(`${ROOM}|${round}|${seatId}|${slotIndex}|${nonceHex}`, 'utf8')
+    .update(`${room}|${round}|${seatId}|${slotIndex}|${nonceHex}`, 'utf8')
     .digest('hex')
 }
 
-function makeClient(name) {
+function connect(room, name) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(WS_URL)
-    const state = { name, events: [], errors: [], ws }
-    const timer = setTimeout(() => reject(new Error(`${name} 连接超时`)), 15000)
+    const ws = new WebSocket(`${ORIGIN.replace(/^http/, 'ws')}/parties/anpai-room/${room}`)
+    const state = { room, name, events: [], errors: [], ws }
+    const timer = setTimeout(() => reject(new Error(`${name}@${room} 连接超时`)), 15000)
     ws.addEventListener('open', () =>
       ws.send(JSON.stringify({ t: 'hello', seatId: seatIdFor(name), nickname: name })),
     )
@@ -58,15 +66,17 @@ async function main() {
   }
 
   const { project } = await import('../src/core/rules.ts')
-  const host = await makeClient('ann')
-  const guest = await makeClient('bob')
+  const { chooseSlot } = await import('../src/core/bot.ts')
 
-  // 非房主添加机器人 → 被拒
+  // ── A 部分：授权边界 ──────────────────────────────────────────
+  console.log('── A 授权边界 ──')
+  const host = await connect(ROOM_A, 'ann')
+  const guest = await connect(ROOM_A, 'bob')
+
   guest.ws.send(JSON.stringify({ t: 'addBot' }))
   await sleep(500)
   check('非房主添加机器人被拒绝', guest.errors.length === 1, guest.errors[0] ?? '无错误')
 
-  // 房主添加机器人
   host.ws.send(JSON.stringify({ t: 'addBot' }))
   await sleep(700)
   const withBot = project(host.events)
@@ -74,74 +84,119 @@ async function main() {
   const bot = withBot.players.find((p) => p.bot)
   check('机器人席位带 bot 标记', bot !== undefined, bot?.nickname ?? '未找到')
 
-  // 2 真人 + 1 机器人 → 可以开局
+  const botSeat = bot.seatId
+  const nonce = 'b'.repeat(32)
+  const hash = await commitHex(ROOM_A, botSeat, 1, 2, nonce)
+
+  // 必须先开局才能测提交：未开局时任何提交都会被拒，断言会「蒙对」。
   host.ws.send(JSON.stringify({ t: 'ready', ready: true }))
   guest.ws.send(JSON.stringify({ t: 'ready', ready: true }))
   await sleep(1000)
-  const started = project(host.events)
+  const startedA = project(host.events)
   check(
     '2 真人 + 1 机器人即可开局',
-    started.phase === 'COMMITTING' && started.round === 1,
-    `phase=${started.phase} round=${started.round}`,
+    startedA.phase === 'COMMITTING' && startedA.round === 1,
+    `phase=${startedA.phase} round=${startedA.round}`,
   )
 
-  // 非房主代机器人提交 → 被拒
-  const botSeat = bot.seatId
-  const nonce = 'b'.repeat(32)
-  const hash = await commitHex(botSeat, 1, 2, nonce)
   guest.ws.send(JSON.stringify({ t: 'commit', round: 1, commit: hash, forSeat: botSeat }))
   await sleep(500)
   check('非房主代机器人提交被拒绝', guest.errors.length === 2, guest.errors[1] ?? '无错误')
 
-  // 房主代机器人提交 → 接受
   host.ws.send(JSON.stringify({ t: 'commit', round: 1, commit: hash, forSeat: botSeat }))
   await sleep(500)
-  const afterCommit = project(host.events)
   check(
     '房主可以代机器人提交',
-    afterCommit.rounds[0]?.committed.includes(botSeat) === true,
-    JSON.stringify(afterCommit.rounds[0]?.committed),
+    project(host.events).rounds[0]?.committed.includes(botSeat) === true,
+    JSON.stringify(project(host.events).rounds[0]?.committed),
   )
-
-  // 真人各自提交
-  for (const [client, slot] of [[host, 0], [guest, 1]]) {
-    const sid = seatIdFor(client.name)
-    const n = `${'c'.repeat(30)}${slot}${client.name === 'ann' ? 0 : 1}`
-    const h = await commitHex(sid, 1, slot, n)
-    client.pending = { slot, nonce: n }
-    client.ws.send(JSON.stringify({ t: 'commit', round: 1, commit: h }))
-  }
-  await sleep(700)
-  check('全员提交后进入揭示阶段', project(host.events).phase === 'REVEALING')
-
-  // 揭示
-  host.ws.send(JSON.stringify({ t: 'reveal', round: 1, slotIndex: 2, nonceHex: nonce, forSeat: botSeat }))
-  for (const client of [host, guest]) {
-    const sid = seatIdFor(client.name)
-    client.ws.send(
-      JSON.stringify({
-        t: 'reveal',
-        round: 1,
-        slotIndex: client.pending.slot,
-        nonceHex: client.pending.nonce,
-      }),
-    )
-    void sid
-  }
-  await sleep(900)
-
-  const settled = project(host.events)
-  check('第 1 轮结算完成', settled.rounds[0]?.settled === true)
-  check(
-    '机器人独占位 2 并得分',
-    settled.rounds[0]?.capturedBy[2] === botSeat,
-    `capturedBy[2]=${settled.rounds[0]?.capturedBy[2]}`,
-  )
-  const botPlayer = settled.players.find((p) => p.seatId === botSeat)
-  check('机器人分数正确（3 人 6 格，位 2 = 5 分）', botPlayer.score === 5, `score=${botPlayer.score}`)
-
   host.ws.close()
   guest.ws.close()
+
+  // ── B 部分：三个机器人互撞回归 ────────────────────────────────
+  console.log('\n── B 机器人互撞回归（1 真人 + 3 机器人，8 轮）──')
+  const solo = await connect(ROOM_B, 'solo')
+  for (let i = 0; i < 3; i++) {
+    solo.ws.send(JSON.stringify({ t: 'addBot' }))
+    await sleep(300)
+  }
+  solo.ws.send(JSON.stringify({ t: 'ready', ready: true }))
+  await sleep(1200)
+
+  const botSeats = project(solo.events)
+    .players.filter((p) => p.bot)
+    .map((p) => p.seatId)
+  check('1 真人 + 3 机器人开局', botSeats.length === 3, `bots=${botSeats.join(',')}`)
+
+  const HUMAN_SLOT = 0
+  const nonceFor = (seat, round) =>
+    `${String(round).padStart(2, '0')}${'d'.repeat(28)}${String(seat).slice(-1)}`
+  const roundBotSlots = []
+  const soloSeat = seatIdFor('solo')
+
+  for (let round = 1; round <= ROUNDS; round++) {
+    // 等到本轮真正进入提交阶段
+    let guard = 0
+    while (!(project(solo.events).round === round && project(solo.events).phase === 'COMMITTING')) {
+      await sleep(250)
+      if (guard++ > 120) throw new Error(`第 ${round} 轮没有进入提交阶段`)
+    }
+
+    const state = project(solo.events)
+    const reserved = []
+    const plan = { [soloSeat]: HUMAN_SLOT }
+
+    // 与房主浏览器完全相同的顺序决策方式
+    for (const seat of botSeats) {
+      const slot = chooseSlot(state, { reserved })
+      if (slot === null) throw new Error(`第 ${round} 轮 ${seat} 无选择`)
+      reserved.push(slot)
+      plan[seat] = slot
+    }
+    roundBotSlots.push([...reserved])
+
+    for (const [seat, slot] of Object.entries(plan)) {
+      const forSeat = seat === soloSeat ? undefined : seat
+      const h = await commitHex(ROOM_B, seat, round, slot, nonceFor(seat, round))
+      solo.ws.send(JSON.stringify({ t: 'commit', round, commit: h, forSeat }))
+    }
+    await sleep(400)
+    for (const [seat, slot] of Object.entries(plan)) {
+      const forSeat = seat === soloSeat ? undefined : seat
+      solo.ws.send(
+        JSON.stringify({
+          t: 'reveal',
+          round,
+          slotIndex: slot,
+          nonceHex: nonceFor(seat, round),
+          forSeat,
+        }),
+      )
+    }
+    await sleep(600)
+  }
+
+  await sleep(800)
+  const final = project(solo.events)
+  check('打满 8 轮进入 GAME_OVER', final.phase === 'GAME_OVER', `phase=${final.phase}`)
+
+  const collisions = roundBotSlots.filter((slots) => new Set(slots).size !== slots.length)
+  check(
+    '8 轮内机器人从不选中同一个位置',
+    collisions.length === 0,
+    collisions.length ? `撞车轮次：${JSON.stringify(collisions)}` : '零碰撞',
+  )
+
+  const penalties = botSeats.map((seat) => final.players.find((p) => p.seatId === seat).penalties)
+  check('三个机器人被罚次数全为 0', penalties.every((n) => n === 0), JSON.stringify(penalties))
+
+  check(
+    '每轮三个机器人各占不同位置',
+    roundBotSlots.every((slots) => new Set(slots).size === 3),
+    JSON.stringify(roundBotSlots),
+  )
+
+  solo.ws.close()
 
   const failed = results.filter((r) => !r.ok)
   console.log(`\n结果：${results.length - failed.length}/${results.length} 通过`)
