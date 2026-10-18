@@ -12,6 +12,7 @@
 | 当前架构 | `docs/game-architecture-v1.md` | `已建立` | 分层、事件模型、commit-reveal、重连、可信边界 |
 | 实施计划与验收 | `docs/game-implementation-plan-v1.md` | `已建立` | 阶段 0–7、DoD、建议清单 |
 | 设计推导历史 | `docs/designs/anpai-slot-collision-game.md` | `SUPERSEDED` | 仅存档推导过程；规则参数已被 v1 套件取代 |
+| 部署与线上环境 | `docs/DEPLOY.md` | `已建立` | 地址、账户、国内不可达的证据与解法 |
 | 当前进度 | `docs/PROGRESS.md` | `已建立` | 由 Git/测试核验后更新 |
 | 决策记录 | （无独立文件） | `缺失` | 决策目前记在 `docs/game-architecture-v1.md` 与 v1 套件正文中；出现长期架构决策时再建 DEC |
 | 测试与验证 | `tests/`（待建立） | `待核验` | 记录实际命令与证据位置 |
