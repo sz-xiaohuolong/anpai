@@ -15,6 +15,6 @@
 | 部署与线上环境 | `docs/DEPLOY.md` | `已建立` | 地址、账户、国内不可达的证据与解法 |
 | 当前进度 | `docs/PROGRESS.md` | `已建立` | 由 Git/测试核验后更新 |
 | 决策记录 | （无独立文件） | `缺失` | 决策目前记在 `docs/game-architecture-v1.md` 与 v1 套件正文中；出现长期架构决策时再建 DEC |
-| 测试与验证 | `tests/`（待建立） | `待核验` | 记录实际命令与证据位置 |
+| 测试与验证 | `tests/`（9 个 spec）+ `scripts/e2e-room.mjs`、`scripts/e2e-bot.mjs` | `已建立` | 命令与证据见 `docs/PROGRESS.md`「验证证据」；E2E 需先起 `pnpm dev:room` |
 
 本文件只作导航，不复制需求、设计或验证结论。
