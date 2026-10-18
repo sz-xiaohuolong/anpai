@@ -10,12 +10,15 @@ import { Server, type Connection } from 'partyserver'
 import type { GameEvent } from '../src/core/types.ts'
 import type { ClientMessage, ServerMessage } from '../src/net/protocol.ts'
 import {
+  applyAddBot,
   applyCommit,
   applyHello,
   applyLeave,
   applyReady,
+  applyRemoveBot,
   applyReset,
   applyReveal,
+  isHost,
   createRoom,
   nextDeadline,
   tick,
@@ -75,9 +78,11 @@ export class AnpaiRoom extends Server<Env> {
         break
       }
       case 'commit': {
+        const actor = this.resolveActor(conn, seatId, message.forSeat)
+        if (actor === null) return
         const result = applyCommit(
           this.room,
-          { seatId, round: message.round, commit: message.commit },
+          { seatId: actor, round: message.round, commit: message.commit },
           now,
         )
         this.room = result.state
@@ -86,16 +91,40 @@ export class AnpaiRoom extends Server<Env> {
         break
       }
       case 'reveal': {
+        const actor = this.resolveActor(conn, seatId, message.forSeat)
+        if (actor === null) return
         const result = applyReveal(
           this.room,
           {
-            seatId,
+            seatId: actor,
             round: message.round,
             slotIndex: message.slotIndex,
             nonceHex: message.nonceHex,
           },
           now,
         )
+        this.room = result.state
+        this.broadcastEvents(result.events)
+        await this.persist()
+        break
+      }
+      case 'addBot': {
+        if (!isHost(this.room, seatId)) {
+          this.reject(conn, 'rejected', '只有房主可以添加机器人')
+          return
+        }
+        const result = applyAddBot(this.room, now)
+        this.room = result.state
+        this.broadcastEvents(result.events)
+        await this.persist()
+        break
+      }
+      case 'removeBot': {
+        if (!isHost(this.room, seatId)) {
+          this.reject(conn, 'rejected', '只有房主可以移除机器人')
+          return
+        }
+        const result = applyRemoveBot(this.room, message.seatId, now)
         this.room = result.state
         this.broadcastEvents(result.events)
         await this.persist()
@@ -155,6 +184,31 @@ export class AnpaiRoom extends Server<Env> {
     this.send(conn, { t: 'welcome', seatId, log: this.room.log })
     this.broadcastEvents(result.events, [conn.id])
     await this.persist()
+  }
+
+  /**
+   * 解析一次提交/揭示的实际归属席位。
+   *
+   * 普通情况就是 sender 自己。带 `forSeat` 时表示房主代机器人操作：
+   * 只有房主可以这么做，且目标必须确实是机器人席位。
+   * 这是**授权**检查，不是游戏规则判定——服务器仍然不知道任何人选了什么。
+   */
+  private resolveActor(
+    conn: Connection<ConnState>,
+    senderSeat: string,
+    forSeat: string | undefined,
+  ): string | null {
+    if (!forSeat) return senderSeat
+    const target = this.room.seats.find((seat) => seat.seatId === forSeat)
+    if (!target?.bot) {
+      this.reject(conn, 'rejected', '目标席位不是机器人')
+      return null
+    }
+    if (!isHost(this.room, senderSeat)) {
+      this.reject(conn, 'rejected', '只有房主可以代机器人操作')
+      return null
+    }
+    return forSeat
   }
 
   private broadcastEvents(events: readonly GameEvent[], except?: string[]): void {

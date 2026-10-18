@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import PositionCard from '../components/PositionCard.vue'
 import type { CardState } from '../components/card-state.ts'
 import { useRoom } from '../app/useRoom.ts'
@@ -102,15 +102,47 @@ const scoreboard = computed(() =>
 
 const showHistory = ref(false)
 
-/** 重开一局：先发 reset，再回房间等大家重新准备。 */
+/** 重开一局：发 reset 即可，跳转由下面的 watcher 统一处理。 */
 function playAgain(): void {
   reset()
-  setTimeout(() => goRoom(props.code), 200)
 }
+
+/**
+ * 一局结束后，任何人点了「再来一局」，服务器会把房间重置回 LOBBY。
+ * 此时**所有玩家**都要回到房间页——否则别人停在牌桌上，而「再来一局」
+ * 按钮的渲染条件是 GAME_OVER，按钮会凭空消失，人就卡住了。
+ */
+let sawGame = false
+watch(
+  () => state.value.phase,
+  (phase) => {
+    if (phase === 'LOBBY') {
+      if (sawGame) goRoom(props.code)
+      return
+    }
+    sawGame = true
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
   <main class="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-3 px-4 py-4">
+    <section
+      v-if="state.phase === 'LOBBY'"
+      class="m-auto flex flex-col items-center gap-4 text-center"
+    >
+      <p class="text-sm text-text-dim">这一局还没开始</p>
+      <button
+        type="button"
+        class="rounded-[8px] bg-bounty px-5 py-3 text-sm font-bold text-felt"
+        @click="goRoom(props.code)"
+      >
+        返回房间
+      </button>
+    </section>
+
+    <template v-else>
     <header class="flex items-center justify-between text-xs">
       <span class="tnum">第 {{ state.round }} / {{ ROUNDS }} 轮</span>
       <span class="text-text-dim">{{ phaseLabel }}</span>
@@ -154,7 +186,9 @@ function playAgain(): void {
           class="flex shrink-0 items-baseline gap-1.5 text-sm"
           :class="player.seatId === me?.seatId ? 'font-bold' : ''"
         >
-          <span class="text-xs text-text-dim">{{ player.nickname }}</span>
+          <span class="text-xs text-text-dim">
+            {{ player.nickname }}<span v-if="player.bot" class="ml-1 text-bounty">BOT</span>
+          </span>
           <span class="tnum">{{ player.score }}</span>
         </li>
       </ul>
@@ -230,5 +264,6 @@ function playAgain(): void {
         再来一局
       </button>
     </section>
+    </template>
   </main>
 </template>

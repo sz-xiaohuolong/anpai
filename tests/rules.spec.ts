@@ -204,6 +204,20 @@ describe('再来一局：project 只投影最后一条 GAME_RESET 之后', () =>
   })
 })
 
+describe('机器人席位', () => {
+  it('JOIN 带 bot 标记时，PlayerState.bot 为 true', () => {
+    const log = lobby(THREE_SEATS)
+    log.joinBot('bot-1', '机器人1')
+    log.roundOpen(1)
+    const state = project(log.events)
+    const bot = state.players.find((p) => p.seatId === 'bot-1')!
+    expect(bot.bot).toBe(true)
+    expect(state.players.filter((p) => p.bot)).toHaveLength(1)
+    // 真人席位不应被误标
+    expect(state.players.filter((p) => !p.bot)).toHaveLength(3)
+  })
+})
+
 describe('人数与位置数', () => {
   it('3 人局用 6 个位置的基础价值表', () => {
     const log = lobby(THREE_SEATS)

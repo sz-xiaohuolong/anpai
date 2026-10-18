@@ -27,6 +27,10 @@ export class LogBuilder {
     return this.push(seatId, 'JOIN', { nickname, seatId })
   }
 
+  joinBot(seatId: SeatId, nickname = seatId): this {
+    return this.push(seatId, 'JOIN', { nickname, seatId, bot: true })
+  }
+
   ready(seatId: SeatId, ready = true): this {
     return this.push(seatId, 'READY', { seatId, ready })
   }

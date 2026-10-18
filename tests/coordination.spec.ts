@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   ROUND_INTERMISSION_MS,
+  applyAddBot,
+  applyRemoveBot,
   applyReset,
+  hostSeatId,
   applyCommit,
   applyHello,
   applyLeave,
@@ -288,3 +291,111 @@ describe('再来一局', () => {
     expect(state.round).toBe(1)
   })
 })
+
+describe('机器人', () => {
+  function twoHumans(now: number): RoomState {
+    let state = createRoom()
+    for (const [i, seatId] of ['s-a', 's-b'].entries()) {
+      state = applyHello(state, { seatId, nickname: seatId, connectionId: `c${i}` }, now).state
+    }
+    return state
+  }
+
+  it('房主是第一个加入的席位', () => {
+    const state = twoHumans(T0)
+    expect(hostSeatId(state)).toBe('s-a')
+  })
+
+  it('等待页可以添加机器人，机器人自动准备', () => {
+    const { state, events } = applyAddBot(twoHumans(T0), T0 + 10)
+    expect(state.seats).toHaveLength(3)
+    const bot = state.seats[2]!
+    expect(bot.bot).toBe(true)
+    expect(bot.ready).toBe(true)
+    expect(events[0]!.type).toBe('JOIN')
+    expect((events[0]!.payload as { bot?: boolean }).bot).toBe(true)
+  })
+
+  it('2 个真人 + 1 个机器人即可开局', () => {
+    let state = applyAddBot(twoHumans(T0), T0 + 10).state
+    state = applyReady(state, 's-a', true, T0 + 20).state
+    state = applyReady(state, 's-b', true, T0 + 30).state
+    expect(state.phase).toBe('committing')
+    expect(state.round).toBe(1)
+  })
+
+  it('最多 5 个席位', () => {
+    let state = twoHumans(T0)
+    for (let i = 0; i < 3; i++) state = applyAddBot(state, T0 + i).state
+    expect(state.seats).toHaveLength(5)
+    const blocked = applyAddBot(state, T0 + 99)
+    expect(blocked.events).toHaveLength(0)
+    expect(blocked.state.seats).toHaveLength(5)
+  })
+
+  it('开局后不能再添加机器人', () => {
+    let state = applyAddBot(twoHumans(T0), T0 + 10).state
+    state = applyReady(state, 's-a', true, T0 + 20).state
+    state = applyReady(state, 's-b', true, T0 + 30).state
+    expect(state.phase).toBe('committing')
+    const result = applyAddBot(state, T0 + 40)
+    expect(result.events).toHaveLength(0)
+  })
+
+  it('可以移除机器人，但不能移除真人', () => {
+    let state = applyAddBot(twoHumans(T0), T0 + 10).state
+    const botSeat = state.seats[2]!.seatId
+    const removedBot = applyRemoveBot(state, botSeat, T0 + 20)
+    expect(removedBot.state.seats).toHaveLength(2)
+
+    state = removedBot.state
+    const removedHuman = applyRemoveBot(state, 's-a', T0 + 30)
+    expect(removedHuman.events).toHaveLength(0)
+    expect(removedHuman.state.seats).toHaveLength(2)
+  })
+
+  it('重开一局后机器人保留且仍然准备', () => {
+    let state = applyAddBot(twoHumans(T0), T0 + 10).state
+    state = applyReady(state, 's-a', true, T0 + 20).state
+    state = applyReady(state, 's-b', true, T0 + 30).state
+    let now = T0 + 100
+    for (let round = 1; round <= ROUNDS_TOTAL; round++) {
+      // 含机器人在内全员提交并揭示：机器人也由测试代打
+      state = commitAllSeats(state, now)
+      state = revealAllSeats(state, now)
+      now += ROUND_INTERMISSION_MS
+      state = tick(state, now).state
+    }
+    expect(state.phase).toBe('over')
+
+    const reset = applyReset(state, now + 1000)
+    expect(reset.state.phase).toBe('lobby')
+    expect(reset.state.seats).toHaveLength(3)
+    const bot = reset.state.seats.find((s) => s.bot)!
+    expect(bot.ready).toBe(true)
+    expect(reset.state.seats.filter((s) => !s.bot).every((s) => !s.ready)).toBe(true)
+  })
+})
+
+const ROUNDS_TOTAL = ROUNDS
+
+function commitAllSeats(state: RoomState, now: number): RoomState {
+  let next = state
+  for (const seat of next.seats) {
+    next = applyCommit(next, { seatId: seat.seatId, round: next.round, commit: `c-${seat.seatId}` }, now)
+      .state
+  }
+  return next
+}
+
+function revealAllSeats(state: RoomState, now: number): RoomState {
+  let next = state
+  next.seats.forEach((seat, index) => {
+    next = applyReveal(
+      next,
+      { seatId: seat.seatId, round: next.round, slotIndex: index, nonceHex: '0'.repeat(32) },
+      now,
+    ).state
+  })
+  return next
+}

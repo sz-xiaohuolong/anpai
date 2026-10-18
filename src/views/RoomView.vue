@@ -10,9 +10,10 @@ const props = defineProps<{ code: string }>()
 // 否则会被自动命名成「玩家」，而且没有任何地方能改。
 const hasNickname = getNickname().trim().length > 0
 
-const { state, me, isReady, status, setReady, reset } = useRoom(props.code, {
-  enabled: hasNickname,
-})
+const { state, me, isReady, status, setReady, reset, isHost, addBot, removeBot } = useRoom(
+  props.code,
+  { enabled: hasNickname },
+)
 
 onMounted(() => {
   if (!hasNickname) navigate(`/?room=${encodeURIComponent(props.code)}`)
@@ -110,8 +111,20 @@ const statusText = computed(() => {
             </span>
             <span v-if="player.seatId === me?.seatId" class="text-xs text-text-dim">(你)</span>
           </span>
-          <span class="text-xs" :class="player.ready ? 'text-capture' : 'text-text-dim'">
-            {{ player.ready ? '已准备' : '等待中' }}
+          <span class="flex items-center gap-2">
+            <span v-if="player.bot" class="text-[10px] text-bounty">BOT</span>
+            <span class="text-xs" :class="player.ready ? 'text-capture' : 'text-text-dim'">
+              {{ player.ready ? '已准备' : '等待中' }}
+            </span>
+            <button
+              v-if="player.bot && isHost && state.phase === 'LOBBY'"
+              type="button"
+              class="text-xs text-text-dim"
+              title="移除机器人"
+              @click="removeBot(player.seatId)"
+            >
+              ✕
+            </button>
           </span>
         </li>
         <li v-if="players.length === 0" class="px-4 py-6 text-center text-xs text-text-dim">
@@ -119,6 +132,15 @@ const statusText = computed(() => {
         </li>
       </ul>
     </section>
+
+    <button
+      v-if="isHost && state.phase === 'LOBBY' && players.length < 5"
+      type="button"
+      class="rounded-[8px] border border-hairline px-4 py-2.5 text-sm text-text-dim"
+      @click="addBot"
+    >
+      + 添加机器人（人不够时补位）
+    </button>
 
     <button
       type="button"

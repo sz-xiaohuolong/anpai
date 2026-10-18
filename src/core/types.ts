@@ -21,7 +21,10 @@ export interface EventBase {
 }
 
 export type GameEvent =
-  | (EventBase & { type: 'JOIN'; payload: { nickname: string; seatId: SeatId } })
+  | (EventBase & {
+      type: 'JOIN'
+      payload: { nickname: string; seatId: SeatId; bot?: boolean }
+    })
   | (EventBase & { type: 'LEAVE'; payload: { seatId: SeatId; reason: 'closed' | 'timeout' } })
   | (EventBase & { type: 'READY'; payload: { seatId: SeatId; ready: boolean } })
   | (EventBase & { type: 'ROUND_OPEN'; payload: { round: number; openedAt: number } })

@@ -20,6 +20,8 @@ export type RoomPhase = 'lobby' | 'committing' | 'revealing' | 'settled' | 'over
 export interface SeatRecord {
   seatId: SeatId
   nickname: string
+  /** 由房主添加的机器人。没有连接，由房主浏览器代为提交/揭示。 */
+  bot: boolean
   connected: boolean
   ready: boolean
   /** 当前占用的连接 id；重连时会换。 */
@@ -42,6 +44,8 @@ export interface RoomState {
   revealed: SeatId[]
   /** 下一轮打开时间（phase === 'settled' 时有效）。 */
   nextRoundAt: number | null
+  /** 已添加过的机器人数量，用来生成不重复的席位 ID。 */
+  botCounter: number
   log: GameEvent[]
 }
 
@@ -62,6 +66,7 @@ export function createRoom(): RoomState {
     committed: [],
     revealed: [],
     nextRoundAt: null,
+    botCounter: 0,
     log: [],
   }
 }
@@ -128,6 +133,7 @@ export function applyHello(state: RoomState, input: HelloInput, now: number): St
     next.seats.push({
       seatId: input.seatId,
       nickname: input.nickname,
+      bot: false,
       connected: true,
       ready: false,
       connectionId: input.connectionId,
@@ -138,6 +144,57 @@ export function applyHello(state: RoomState, input: HelloInput, now: number): St
   }
 
   return { state: next, events }
+}
+
+/**
+ * 房主 = 第一个加入的席位。
+ *
+ * 这不是「权威」——房主对游戏判定没有任何特殊权力，
+ * 只是被赋予「添加/移除机器人」这一项管理操作。
+ * 它由日志推导，不是服务端额外保存的状态。
+ */
+export function hostSeatId(state: RoomState): SeatId | null {
+  return state.seats[0]?.seatId ?? null
+}
+
+export function isHost(state: RoomState, seatId: SeatId): boolean {
+  return hostSeatId(state) === seatId
+}
+
+export function applyAddBot(state: RoomState, now: number): StepResult {
+  if (state.phase !== 'lobby') return { state, events: [] }
+  if (state.seats.length >= MAX_PLAYERS) return { state, events: [] }
+
+  const next = cloneState(state)
+  next.botCounter += 1
+  const seatId = `bot-${next.botCounter}`
+  const nickname = `机器人${next.botCounter}`
+
+  next.seats.push({
+    seatId,
+    nickname,
+    bot: true,
+    // 机器人没有连接，但视为在线且已准备，这样 2 个真人 + 1 个机器人即可开局。
+    connected: true,
+    ready: true,
+    connectionId: null,
+  })
+
+  const events: GameEvent[] = [
+    emit(next, seatId, 'JOIN', { nickname, seatId, bot: true }, now),
+  ]
+  return { state: next, events }
+}
+
+export function applyRemoveBot(state: RoomState, seatId: SeatId, now: number): StepResult {
+  if (state.phase !== 'lobby') return { state, events: [] }
+  const seat = state.seats.find((candidate) => candidate.seatId === seatId)
+  if (!seat || !seat.bot) return { state, events: [] }
+
+  const next = cloneState(state)
+  next.seats = next.seats.filter((candidate) => candidate.seatId !== seatId)
+  const event = emit(next, seatId, 'LEAVE', { seatId, reason: 'closed' }, now)
+  return { state: next, events: [event] }
 }
 
 export function applyLeave(state: RoomState, seatId: SeatId, now: number): StepResult {
@@ -370,10 +427,19 @@ export function applyReset(state: RoomState, now: number): StepResult {
   next.nextRoundAt = null
 
   for (const seat of next.seats) {
-    seat.ready = false
+    // 机器人始终准备就绪；真人需要重新点准备。
+    seat.ready = seat.bot
     if (seat.connected) {
       events.push(
-        emit(next, seat.seatId, 'JOIN', { nickname: seat.nickname, seatId: seat.seatId }, now),
+        emit(
+          next,
+          seat.seatId,
+          'JOIN',
+          seat.bot
+            ? { nickname: seat.nickname, seatId: seat.seatId, bot: true }
+            : { nickname: seat.nickname, seatId: seat.seatId },
+          now,
+        ),
       )
     }
   }

@@ -4,7 +4,7 @@
 - Requirement Status: `FROZEN`（用户任务书 + v1 五份文档）
 - Current Workflow State: `BUILDING`
 - Operational Status: `ACTIVE`
-- Verification Status: `PARTIAL`（阶段 1–3 已验证；阶段 4–7 未开始）
+- Verification Status: `PARTIAL`（阶段 1–3 已验证；机器人补位与重开修复已验证逻辑层）
 - Shipping Authorization: `NOT_REQUESTED`
 - Last Audited: `2026-10-18`
 
@@ -27,7 +27,7 @@
 
 | 检查 | 命令 | 结果 |
 |---|---|---|
-| 单元测试 | `pnpm test` | **101 passed / 8 files** |
+| 单元测试 | `pnpm test` | **116 passed / 9 files** |
 | 类型检查 | `pnpm typecheck` | 通过，无输出 |
 | 生产构建 | `pnpm build` | 通过，69.06 kB JS / 8.03 kB CSS |
 | 开发服务器 | `pnpm dev` + `curl` | HTML / `main.ts` / `App.vue` / `core/rules.ts` 全部 HTTP 200 |
@@ -75,6 +75,33 @@ PASS  空位赏金各 +1 — [0,0,0,1,1,1]
 它把「真实 WebSocket → 真实 Durable Object → 真实日志 → 纯函数投影」这条链完整跑了一遍。
 
 **未验证**：没有用真实浏览器打开过页面。上述是路由与模块可加载 + 逻辑层端到端，不是 GUI 验收。
+
+### 本轮追加功能与修复（2026-10-18）
+
+**1. 修复「再来一局」只有点的人回房间**
+
+- 根因：重置后房间 phase 变 `lobby`，而「再来一局」按钮的渲染条件是 `GAME_OVER`，按钮凭空消失，其他人卡在牌桌上。
+- 修复：`PlayView` 监听 phase，一旦从进行中回到 `lobby` 就自动回房间（所有人一起）；并给直接打开 `/play` 的冷启动场景加了「这一局还没开始」出口。
+
+**2. 新增机器人补位（原 V1 范围外，经用户授权）**
+
+- 房主 = 第一个加入的席位（由日志推导，非权威）
+- 等待页可添加/移除机器人，上限 5 席位，机器人自动准备 → **2 真人 + 1 机器人即可开局**
+- 机器人由房主浏览器代为提交/揭示，服务端只校验「`forSeat` 必须是机器人 且 发送者必须是房主」
+- 策略写死在 `src/core/bot.ts`：`有效价值 / (1 + 上一轮拥挤度)`，确定性、无随机
+
+**证据**：
+
+| 检查 | 结果 |
+|---|---|
+| `pnpm test` | **116 passed / 9 files**（新增 `tests/bot.spec.ts` 与协调层机器人用例） |
+| `pnpm typecheck` | 通过 |
+| `pnpm build` | 通过 |
+| `scripts/e2e-bot.mjs` | **10/10**，含「非房主添加机器人被拒」「非房主代操作被拒」「2 真人 + 1 机器人开局」「机器人独占位 2 得 5 分」 |
+| `scripts/e2e-room.mjs` | **14/14**（回归，未受影响） |
+| 经 Vite 代理（5188）复跑机器人 E2E | 10/10 |
+
+**未验证**：这两项都没有在真实浏览器里点过。UI 层的「自动回房间」与「添加机器人按钮」只经过类型检查与模块加载，没有 GUI 证据。
 
 ## 本次实施中发现并修正的问题
 

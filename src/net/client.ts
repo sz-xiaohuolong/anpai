@@ -62,12 +62,21 @@ export class RoomClient {
     this.send({ t: 'ready', ready })
   }
 
-  sendCommit(round: number, commit: string): void {
-    this.send({ t: 'commit', round, commit })
+  /** `forSeat` 仅由房主用于代机器人提交。 */
+  sendCommit(round: number, commit: string, forSeat?: string): void {
+    this.send({ t: 'commit', round, commit, forSeat })
   }
 
-  sendReveal(round: number, slotIndex: number, nonceHex: string): void {
-    this.send({ t: 'reveal', round, slotIndex, nonceHex })
+  sendReveal(round: number, slotIndex: number, nonceHex: string, forSeat?: string): void {
+    this.send({ t: 'reveal', round, slotIndex, nonceHex, forSeat })
+  }
+
+  sendAddBot(): void {
+    this.send({ t: 'addBot' })
+  }
+
+  sendRemoveBot(seatId: string): void {
+    this.send({ t: 'removeBot', seatId })
   }
 
   /** 一局结束后重开。 */

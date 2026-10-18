@@ -10,8 +10,10 @@ import type { GameEvent } from '../core/types.ts'
 export type ClientMessage =
   | { t: 'hello'; seatId: string; nickname: string }
   | { t: 'ready'; ready: boolean }
-  | { t: 'commit'; round: number; commit: string }
-  | { t: 'reveal'; round: number; slotIndex: number; nonceHex: string }
+  | { t: 'commit'; round: number; commit: string; forSeat?: string }
+  | { t: 'reveal'; round: number; slotIndex: number; nonceHex: string; forSeat?: string }
+  | { t: 'addBot' }
+  | { t: 'removeBot'; seatId: string }
   | { t: 'reset' }
 
 export type ServerMessage =

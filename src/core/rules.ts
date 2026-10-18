@@ -19,6 +19,8 @@ export type Phase = 'LOBBY' | 'COMMITTING' | 'REVEALING' | 'RESOLVED' | 'GAME_OV
 export interface PlayerState {
   seatId: SeatId
   nickname: string
+  /** 由房主添加的机器人席位。机器人由房主浏览器代为操作。 */
+  bot: boolean
   connected: boolean
   ready: boolean
   score: number
@@ -112,6 +114,7 @@ export function project(rawLog: readonly GameEvent[]): GameState {
   const players = roster.map((r) => ({
     seatId: r.seatId,
     nickname: r.nickname,
+    bot: r.bot,
     connected: r.connected,
     ready: r.ready,
     score: 0,
@@ -279,6 +282,7 @@ function buildRound(
 interface RosterEntry {
   seatId: SeatId
   nickname: string
+  bot: boolean
   connected: boolean
   ready: boolean
 }
@@ -290,15 +294,16 @@ function buildRoster(events: readonly GameEvent[]): RosterEntry[] {
   for (const event of events) {
     switch (event.type) {
       case 'JOIN': {
-        const { nickname, seatId } = event.payload
+        const { nickname, seatId, bot } = event.payload
         const existing = index.get(seatId)
         if (existing === undefined) {
           index.set(seatId, roster.length)
-          roster.push({ seatId, nickname, connected: true, ready: false })
+          roster.push({ seatId, nickname, bot: bot === true, connected: true, ready: false })
         } else {
           // 重连：沿用原席位，更新昵称与在线状态。
           roster[existing]!.nickname = nickname
           roster[existing]!.connected = true
+          if (bot === true) roster[existing]!.bot = true
         }
         break
       }

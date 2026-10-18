@@ -6,6 +6,7 @@
  */
 
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
+import { chooseSlot } from '../core/bot.ts'
 import { commitOf, randomNonceHex } from '../core/crypto.ts'
 import { project, type GameState, type PlayerState } from '../core/rules.ts'
 import type { GameEvent } from '../core/types.ts'
@@ -57,6 +58,9 @@ export function useRoom(roomCode: string, options: { enabled?: boolean } = {}) {
     () => pending.get(state.value.round)?.slotIndex ?? null,
   )
 
+  /** 房主 = 第一个加入的席位。由日志推导，不是服务端特权。 */
+  const isHost = computed(() => state.value.players[0]?.seatId === seatId.value)
+
   void (async () => {
     // 没有昵称时不连接：否则会以「玩家」身份写入 JOIN，房间列表里凭空多一个人。
     if (options.enabled === false) return
@@ -104,6 +108,64 @@ export function useRoom(roomCode: string, options: { enabled?: boolean } = {}) {
     { immediate: true },
   )
 
+  // ── 机器人执行器 ──────────────────────────────────────────────
+  // 机器人住在房主的浏览器里：房主替它算承诺、发提交、发揭示。
+  // 服务器只知道「这条提交是 bot-1 席位发的」，不知道它选了什么。
+  const botPicks = reactive(new Map<string, { round: number; slotIndex: number; nonceHex: string }>())
+  const botScheduled = new Set<string>()
+  const botRevealed = new Set<string>()
+
+  async function runBotCommit(botSeat: string, round: number): Promise<void> {
+    // 延时期间局面可能已经推进，触发时必须重新确认。
+    if (state.value.phase !== 'COMMITTING' || state.value.round !== round) return
+    const slotIndex = chooseSlot(state.value)
+    if (slotIndex === null) return
+    const nonceHex = randomNonceHex()
+    const commit = await commitOf({ roomCode, round, seatId: botSeat, slotIndex, nonceHex })
+    botPicks.set(botSeat, { round, slotIndex, nonceHex })
+    client.value?.sendCommit(round, commit, botSeat)
+  }
+
+  watch(
+    () => [state.value.phase, state.value.round] as const,
+    ([phase, round]) => {
+      if (phase === 'LOBBY') {
+        // 重开一局后轮次从 1 重新开始，必须清掉上一局的调度标记。
+        botPicks.clear()
+        botScheduled.clear()
+        botRevealed.clear()
+        return
+      }
+      if (!isHost.value) return
+
+      const bots = state.value.players.filter((player) => player.bot).map((player) => player.seatId)
+      if (bots.length === 0) return
+
+      if (phase === 'COMMITTING') {
+        bots.forEach((botSeat, index) => {
+          const key = `${botSeat}:${round}`
+          if (botScheduled.has(key)) return
+          botScheduled.add(key)
+          // 错开一点，让揭示阶段看起来不像同一瞬间全部返回。
+          setTimeout(() => void runBotCommit(botSeat, round), 700 + index * 450)
+        })
+        return
+      }
+
+      if (phase === 'REVEALING') {
+        for (const botSeat of bots) {
+          const pick = botPicks.get(botSeat)
+          if (!pick || pick.round !== round) continue
+          const key = `${botSeat}:${round}`
+          if (botRevealed.has(key)) continue
+          botRevealed.add(key)
+          client.value?.sendReveal(round, pick.slotIndex, pick.nonceHex, botSeat)
+        }
+      }
+    },
+    { immediate: true },
+  )
+
   async function pick(slotIndex: number): Promise<void> {
     if (state.value.phase !== 'COMMITTING') return
     if (hasCommitted.value) return
@@ -131,6 +193,14 @@ export function useRoom(roomCode: string, options: { enabled?: boolean } = {}) {
     client.value?.sendReset()
   }
 
+  function addBot(): void {
+    client.value?.sendAddBot()
+  }
+
+  function removeBot(botSeatId: string): void {
+    client.value?.sendRemoveBot(botSeatId)
+  }
+
   onScopeDispose(() => {
     client.value?.close()
     client.value = null
@@ -150,5 +220,8 @@ export function useRoom(roomCode: string, options: { enabled?: boolean } = {}) {
     pick,
     setReady,
     reset,
+    isHost,
+    addBot,
+    removeBot,
   }
 }
