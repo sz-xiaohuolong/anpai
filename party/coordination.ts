@@ -343,6 +343,44 @@ export function tick(state: RoomState, now: number): StepResult {
   return { state: next, events }
 }
 
+/**
+ * 再来一局：只在「一局已结束」或「尚未开局」时允许。
+ *
+ * 日志保持追加式——写一条 GAME_RESET，然后为每个在线席位重发 JOIN。
+ * project() 只投影最后一条 GAME_RESET 之后的事件，因此不需要清空日志，
+ * 也就不存在「清空与写入」的竞态。
+ */
+export function applyReset(state: RoomState, now: number): StepResult {
+  // 最后一轮结算后还有一段 intermission 才进入 'over'，玩家会在这段时间点「再来一局」，
+  // 因此 'settled' 且已打满轮数也必须允许，否则点击会被静默忽略。
+  const finished =
+    state.phase === 'over' || (state.phase === 'settled' && state.round >= ROUNDS)
+  if (!finished && state.phase !== 'lobby') return { state, events: [] }
+
+  const next = cloneState(state)
+  const events: GameEvent[] = [emit(next, 'system', 'GAME_RESET', { at: now }, now)]
+
+  next.round = 0
+  next.phase = 'lobby'
+  next.openedAt = null
+  next.commitDeadline = null
+  next.revealDeadline = null
+  next.committed = []
+  next.revealed = []
+  next.nextRoundAt = null
+
+  for (const seat of next.seats) {
+    seat.ready = false
+    if (seat.connected) {
+      events.push(
+        emit(next, seat.seatId, 'JOIN', { nickname: seat.nickname, seatId: seat.seatId }, now),
+      )
+    }
+  }
+
+  return { state: next, events }
+}
+
 /** 下一次需要唤醒的时间点；null 表示无需定时器。 */
 export function nextDeadline(state: RoomState): number | null {
   if (state.phase === 'committing') return state.commitDeadline

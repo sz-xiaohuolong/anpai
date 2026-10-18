@@ -92,7 +92,19 @@ const EMPTY_STATE: GameState = {
  * 传入的日志可以是任意顺序、含重复的；内部会先规范化。
  */
 export function project(rawLog: readonly GameEvent[]): GameState {
-  const { events, gaps } = normalizeLog(rawLog)
+  const { events: allEvents, gaps } = normalizeLog(rawLog)
+
+  // 「再来一局」：只投影最后一条 GAME_RESET 之后的事件。
+  // 这样日志保持追加式、不需要清空，也不会有「清空与写入」的竞态。
+  let resetAt = -1
+  for (let i = allEvents.length - 1; i >= 0; i--) {
+    if (allEvents[i]!.type === 'GAME_RESET') {
+      resetAt = i
+      break
+    }
+  }
+  const events = resetAt >= 0 ? allEvents.slice(resetAt + 1) : allEvents
+
   if (events.length === 0) return EMPTY_STATE
 
   const roster = buildRoster(events)
@@ -239,7 +251,10 @@ function buildRound(
     }
   }
 
-  const revealClosed = reveals.size >= commits.size || timedOutReveal
+  // 一轮只有在**提交阶段关闭之后**才可能结算。
+  // 否则「零提交」会让 reveals.size >= commits.size 变成空真，回合刚开始就被判结束。
+  const commitClosed = timedOutCommit || commits.size >= seatIds.length
+  const revealClosed = commitClosed && (timedOutReveal || reveals.size >= commits.size)
 
   return {
     round,

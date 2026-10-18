@@ -124,6 +124,11 @@ export function useRoom(roomCode: string) {
     client.value?.sendReady(ready)
   }
 
+  /** 一局结束后重开（仅 phase === 'over' 或 'lobby' 时服务端才接受）。 */
+  function reset(): void {
+    client.value?.sendReset()
+  }
+
   onScopeDispose(() => {
     client.value?.close()
     client.value = null
@@ -142,5 +147,6 @@ export function useRoom(roomCode: string) {
     myPendingSlot,
     pick,
     setReady,
+    reset,
   }
 }

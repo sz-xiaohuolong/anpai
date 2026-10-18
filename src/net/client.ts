@@ -70,6 +70,11 @@ export class RoomClient {
     this.send({ t: 'reveal', round, slotIndex, nonceHex })
   }
 
+  /** 一局结束后重开。 */
+  sendReset(): void {
+    this.send({ t: 'reset' })
+  }
+
   private open(): void {
     this.setStatus(this.attempt === 0 ? 'connecting' : 'reconnecting')
     const socket = new WebSocket(this.options.url)

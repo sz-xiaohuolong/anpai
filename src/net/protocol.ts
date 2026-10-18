@@ -12,6 +12,7 @@ export type ClientMessage =
   | { t: 'ready'; ready: boolean }
   | { t: 'commit'; round: number; commit: string }
   | { t: 'reveal'; round: number; slotIndex: number; nonceHex: string }
+  | { t: 'reset' }
 
 export type ServerMessage =
   | { t: 'welcome'; seatId: string; log: GameEvent[] }

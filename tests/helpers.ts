@@ -43,6 +43,10 @@ export class LogBuilder {
     return this.push(seatId, 'REVEAL', { round, slotIndex, nonceHex })
   }
 
+  gameReset(): this {
+    return this.push('system', 'GAME_RESET', { at: BASE_TS })
+  }
+
   timeout(round: number, phase: 'commit' | 'reveal'): this {
     return this.push('system', 'ROUND_TIMEOUT', { round, phase })
   }

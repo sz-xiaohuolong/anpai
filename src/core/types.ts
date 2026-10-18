@@ -31,6 +31,8 @@ export type GameEvent =
       payload: { round: number; slotIndex: SlotIndex; nonceHex: string }
     })
   | (EventBase & { type: 'ROUND_TIMEOUT'; payload: { round: number; phase: 'commit' | 'reveal' } })
+  /** 一局结束后重开。project() 只从最后一条 GAME_RESET 之后开始投影。 */
+  | (EventBase & { type: 'GAME_RESET'; payload: { at: number } })
 
 export type GameEventType = GameEvent['type']
 

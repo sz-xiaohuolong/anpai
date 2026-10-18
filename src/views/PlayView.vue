@@ -8,7 +8,7 @@ import { COMMIT_WINDOW_MS, REVEAL_WINDOW_MS, ROUNDS, slotValues } from '../core/
 
 const props = defineProps<{ code: string }>()
 
-const { state, me, status, currentRound, hasCommitted, myPendingSlot, pick } = useRoom(props.code)
+const { state, me, status, currentRound, hasCommitted, myPendingSlot, pick, reset } = useRoom(props.code)
 
 const now = ref(Date.now())
 let timer: ReturnType<typeof setInterval> | null = null
@@ -101,6 +101,12 @@ const scoreboard = computed(() =>
 )
 
 const showHistory = ref(false)
+
+/** 重开一局：先发 reset，再回房间等大家重新准备。 */
+function playAgain(): void {
+  reset()
+  setTimeout(() => goRoom(props.code), 200)
+}
 </script>
 
 <template>
@@ -219,9 +225,9 @@ const showHistory = ref(false)
       <button
         type="button"
         class="mt-4 w-full rounded-[8px] bg-bounty px-4 py-3 text-sm font-bold text-felt"
-        @click="goRoom(props.code)"
+        @click="playAgain"
       >
-        返回房间
+        再来一局
       </button>
     </section>
   </main>

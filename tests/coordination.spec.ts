@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   ROUND_INTERMISSION_MS,
+  applyReset,
   applyCommit,
   applyHello,
   applyLeave,
@@ -242,5 +243,48 @@ describe('超时与推进', () => {
     expect(state.phase).toBe('over')
     expect(state.round).toBe(ROUNDS)
     expect(nextDeadline(state)).toBeNull()
+  })
+})
+
+describe('再来一局', () => {
+  function finishedRoom(now: number): RoomState {
+    let state = startedRoom(now)
+    for (let round = 1; round <= ROUNDS; round++) {
+      state = commitAll(state, now)
+      state = revealAll(state, now)
+      now += ROUND_INTERMISSION_MS
+      state = tick(state, now).state
+    }
+    return state
+  }
+
+  it('进行中拒绝重开', () => {
+    const state = startedRoom()
+    const result = applyReset(state, T0 + 10)
+    expect(result.events).toHaveLength(0)
+    expect(result.state).toBe(state)
+  })
+
+  it('结束后重开：回到 lobby、清空轮次、全员取消准备', () => {
+    const finished = finishedRoom(T0)
+    expect(finished.phase).toBe('over')
+
+    const { state, events } = applyReset(finished, T0 + 999_999)
+    expect(state.phase).toBe('lobby')
+    expect(state.round).toBe(0)
+    expect(state.nextRoundAt).toBeNull()
+    expect(state.seats.every((s) => !s.ready)).toBe(true)
+    expect(events[0]!.type).toBe('GAME_RESET')
+    expect(events.filter((e) => e.type === 'JOIN')).toHaveLength(3)
+  })
+
+  it('重开后全员再次准备可以重新开局', () => {
+    const finished = finishedRoom(T0)
+    let state = applyReset(finished, T0 + 999_999).state
+    for (const seatId of ['s-a', 's-b', 's-c']) {
+      state = applyReady(state, seatId, true, T0 + 1_000_000).state
+    }
+    expect(state.phase).toBe('committing')
+    expect(state.round).toBe(1)
   })
 })

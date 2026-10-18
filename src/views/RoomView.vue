@@ -6,7 +6,7 @@ import { inviteUrl } from '../app/session.ts'
 
 const props = defineProps<{ code: string }>()
 
-const { state, me, isReady, status, setReady } = useRoom(props.code)
+const { state, me, isReady, status, setReady, reset } = useRoom(props.code)
 
 const copied = ref(false)
 
@@ -28,12 +28,18 @@ function toggleReady() {
 }
 
 // 开局后自动进入游戏页。
+// immediate: true 让「游戏中刷新页面」也能回到牌桌，而不是卡在房间页。
+// 只在「进行中」跳转；'over' 留在房间页，由下方按钮重开。
+const ACTIVE_PHASES = new Set(['COMMITTING', 'REVEALING', 'RESOLVED'])
 watch(
   () => state.value.phase,
   (phase) => {
-    if (phase !== 'LOBBY') goPlay(props.code)
+    if (ACTIVE_PHASES.has(phase)) goPlay(props.code)
   },
+  { immediate: true },
 )
+
+const isOver = computed(() => state.value.phase === 'GAME_OVER')
 
 const statusText = computed(() => {
   switch (status.value) {
@@ -112,6 +118,21 @@ const statusText = computed(() => {
     >
       {{ isReady ? '取消准备' : '准备' }}
     </button>
+
+    <section
+      v-if="isOver"
+      class="rounded-[14px] border border-hairline bg-felt-raised px-4 py-4 text-center"
+    >
+      <p class="mb-3 text-sm">这一局已经结束了</p>
+      <button
+        type="button"
+        class="w-full rounded-[8px] bg-bounty px-4 py-3 text-sm font-bold text-felt"
+        @click="reset"
+      >
+        再来一局
+      </button>
+      <p class="mt-2 text-xs text-text-dim">所有人重新点「准备」即可开始</p>
+    </section>
 
     <p class="text-center text-xs text-text-dim">
       满 3 人且全部准备后自动开始

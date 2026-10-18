@@ -153,6 +153,15 @@ describe('阶段推进', () => {
     expect(project(log.events).phase).toBe('REVEALING')
   })
 
+  it('刚开局的回合（零提交、未超时）不算已结算', () => {
+    // 回归测试：零提交时「全员已揭示」曾是空真，导致回合刚开始就被判结束。
+    const log = lobby(THREE_SEATS)
+    log.roundOpen(1)
+    const state = project(log.events)
+    expect(state.rounds[0]!.settled).toBe(false)
+    expect(state.phase).toBe('COMMITTING')
+  })
+
   it('全部揭示后该轮 settled', () => {
     const log = lobby(FOUR_SEATS)
     log.playRound(1, { 's-a': 0, 's-b': 1, 's-c': 2, 's-d': 3 })
@@ -167,6 +176,31 @@ describe('阶段推进', () => {
     const state = project(log.events)
     expect(state.phase).toBe('GAME_OVER')
     expect(state.rounds).toHaveLength(8)
+  })
+})
+
+describe('再来一局：project 只投影最后一条 GAME_RESET 之后', () => {
+  it('第二局从第 1 轮重新开始，不带上一局的分数与轮次', () => {
+    const log = lobby(THREE_SEATS)
+    for (let r = 1; r <= 8; r++) log.playRound(r, { 's-a': 0, 's-b': 1, 's-c': 2 })
+    const firstGame = project(log.events)
+    expect(firstGame.phase).toBe('GAME_OVER')
+    expect(firstGame.rounds).toHaveLength(8)
+
+    log.gameReset()
+    for (const seatId of THREE_SEATS) log.join(seatId, seatId.toUpperCase())
+    log.playRound(1, { 's-a': 1, 's-b': 2, 's-c': 0 })
+
+    const secondGame = project(log.events)
+    expect(secondGame.rounds).toHaveLength(1)
+    expect(secondGame.round).toBe(1)
+    expect(secondGame.phase).not.toBe('GAME_OVER')
+    // 3 人 6 格：位 1=4、位 2=5、位 0=4，各独占一次
+    expect(Object.fromEntries(secondGame.players.map((p) => [p.seatId, p.score]))).toEqual({
+      's-a': 4,
+      's-b': 5,
+      's-c': 4,
+    })
   })
 })
 

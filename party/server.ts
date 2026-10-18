@@ -14,6 +14,7 @@ import {
   applyHello,
   applyLeave,
   applyReady,
+  applyReset,
   applyReveal,
   createRoom,
   nextDeadline,
@@ -95,6 +96,13 @@ export class AnpaiRoom extends Server<Env> {
           },
           now,
         )
+        this.room = result.state
+        this.broadcastEvents(result.events)
+        await this.persist()
+        break
+      }
+      case 'reset': {
+        const result = applyReset(this.room, now)
         this.room = result.state
         this.broadcastEvents(result.events)
         await this.persist()

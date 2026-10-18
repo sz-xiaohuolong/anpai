@@ -27,7 +27,7 @@
 
 | 检查 | 命令 | 结果 |
 |---|---|---|
-| 单元测试 | `pnpm test` | **96 passed / 8 files** |
+| 单元测试 | `pnpm test` | **101 passed / 8 files** |
 | 类型检查 | `pnpm typecheck` | 通过，无输出 |
 | 生产构建 | `pnpm build` | 通过，69.06 kB JS / 8.03 kB CSS |
 | 开发服务器 | `pnpm dev` + `curl` | HTML / `main.ts` / `App.vue` / `core/rules.ts` 全部 HTTP 200 |
@@ -62,7 +62,7 @@ PASS  服务器分配的 seq 连续无缺口 — 共 13 条
 | 生产构建 | `pnpm build` | 通过，85.82 kB JS / 13.52 kB CSS |
 | SPA 路由 | `pnpm dev` + `curl` | `/`、`/room/ABC123`、`/room/ABC123/play` 均 200 |
 | 视图模块转译 | `curl` 各 `.vue` / `.ts` | App、三个视图、PositionCard、useRoom、client 全部 200，Vite 无报错 |
-| 端到端（含客户端投影） | `pnpm dev:room` + `pnpm e2e` | **11/11 通过** |
+| 端到端（含客户端投影） | `pnpm dev:room` + `pnpm e2e` | **14/14 通过**（含打满 8 轮、总分校验、再来一局） |
 
 端到端 11 项包含两条关键断言：
 
@@ -81,7 +81,13 @@ PASS  空位赏金各 +1 — [0,0,0,1,1,1]
 1. **规则文档 §8 的被罚次数写错。** 小北应为 4（第 3、4、5、6 轮），原文写 3。已修正文档与 fixture。
 2. **`tick()` 丢状态更新。** 原实现用「有没有产生事件」判断是否返回新状态；「整局结束」分支只改状态不产生事件，导致 `phase` 永远停在 `settled`。已改为比较 state 引用。
 3. **PartyServer 路由名写错。** 路由是 `/parties/:绑定名-kebab-case/:房间`，即 `/parties/anpai-room/<房间码>`，不是 `/parties/room/...`。
-4. **E2E 测试被持久化状态污染。** 房间码写死导致 DO 状态跨运行累积，读出历史日志里的旧 `ROUND_OPEN`。已改为每次生成唯一房间码。
+4. **零提交的回合被判为已结算。** `project()` 里「全员已揭示」在 `commits` 为空时是空真，
+   导致刚开的回合立刻结束。已改为「提交阶段关闭后才可能结算」，并加回归测试。
+5. **最后一轮结算后 5 秒内点「再来一局」会被静默拒绝。** 房间此时仍是 `settled` 而非 `over`。
+   已放宽为「`settled` 且已打满 8 轮」也允许重开。
+6. **游戏中刷新页面会卡在房间页。** `RoomView` 的跳转 watcher 没有 `immediate`，且对 `GAME_OVER`
+   也会误跳。已改为只在「进行中」阶段跳转并加 `immediate`。
+7. **E2E 测试被持久化状态污染。** 房间码写死导致 DO 状态跨运行累积，读出历史日志里的旧 `ROUND_OPEN`。已改为每次生成唯一房间码。
 
 ## 环境与操作备忘
 
