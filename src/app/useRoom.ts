@@ -112,11 +112,12 @@ export function useRoom(roomCode: string, options: { enabled?: boolean } = {}) {
   // 机器人住在房主的浏览器里：房主替它算承诺、发提交、发揭示。
   // 服务器只知道「这条提交是 bot-1 席位发的」，不知道它选了什么。
   //
-  // 关键：机器人必须**依次决策**。它们看到的是同一份公开局面，
-  // 如果各自独立决策，纯函数必然给出同一个答案 → 必然撞车。
-  // 因此这里累积「本轮已被机器人预定的位置」，逐个传给 chooseSlot。
+  // 机器人各自独立决策：按对称混合策略均衡的概率抽样，种子 = (房间码, 席位, 轮次)。
+  //
+  // 房间码必须参与种子。只用 (席位, 轮次) 时，同一局里每一轮的抽样点都被固定，
+  // 第 1 轮在每一局里都给出同一组落点——等于一次抽样被重复了成千上万次，
+  // 实测撞车率会掉到 37%（真人基线 69%），机器人反而比真人更少撞车、占了便宜。
   const botPicks = reactive(new Map<string, { round: number; slotIndex: number; nonceHex: string }>())
-  const botReserved = reactive(new Map<number, number[]>())
   const botScheduled = new Set<string>()
   const botRevealed = new Set<string>()
 
@@ -124,13 +125,8 @@ export function useRoom(roomCode: string, options: { enabled?: boolean } = {}) {
     // 延时期间局面可能已经推进，触发时必须重新确认。
     if (state.value.phase !== 'COMMITTING' || state.value.round !== round) return
 
-    const reserved = botReserved.get(round) ?? []
-    const slotIndex = chooseSlot(state.value, { reserved })
+    const slotIndex = chooseSlot(state.value, { seatId: botSeat, roomCode })
     if (slotIndex === null) return
-
-    // 必须在任何 await 之前同步占位：两个机器人的定时器可能几乎同时触发，
-    // 若等到算完哈希再登记，第二个机器人会读到还没更新的 reserved 并选同一个位。
-    botReserved.set(round, [...reserved, slotIndex])
 
     const nonceHex = randomNonceHex()
     const commit = await commitOf({ roomCode, round, seatId: botSeat, slotIndex, nonceHex })
@@ -144,7 +140,6 @@ export function useRoom(roomCode: string, options: { enabled?: boolean } = {}) {
       if (phase === 'LOBBY') {
         // 重开一局后轮次从 1 重新开始，必须清掉上一局的调度标记。
         botPicks.clear()
-        botReserved.clear()
         botScheduled.clear()
         botRevealed.clear()
         return
