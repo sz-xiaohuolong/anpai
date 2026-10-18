@@ -19,7 +19,7 @@ interface PendingPick {
   nonceHex: string
 }
 
-export function useRoom(roomCode: string) {
+export function useRoom(roomCode: string, options: { enabled?: boolean } = {}) {
   const events = ref<GameEvent[]>([])
   const status = ref<ConnectionStatus>('idle')
   const seatId = ref<string | null>(null)
@@ -58,6 +58,8 @@ export function useRoom(roomCode: string) {
   )
 
   void (async () => {
+    // 没有昵称时不连接：否则会以「玩家」身份写入 JOIN，房间列表里凭空多一个人。
+    if (options.enabled === false) return
     try {
       const id = await getSeatId()
       seatId.value = id

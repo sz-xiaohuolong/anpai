@@ -1,21 +1,31 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoom } from '../app/useRoom.ts'
-import { goPlay, goHome } from '../app/router.ts'
-import { inviteUrl } from '../app/session.ts'
+import { goPlay, goHome, navigate } from '../app/router.ts'
+import { getNickname } from '../app/session.ts'
 
 const props = defineProps<{ code: string }>()
 
-const { state, me, isReady, status, setReady, reset } = useRoom(props.code)
+// 直接打开邀请链接的人还没有昵称。先让他回首页填昵称，
+// 否则会被自动命名成「玩家」，而且没有任何地方能改。
+const hasNickname = getNickname().trim().length > 0
+
+const { state, me, isReady, status, setReady, reset } = useRoom(props.code, {
+  enabled: hasNickname,
+})
+
+onMounted(() => {
+  if (!hasNickname) navigate(`/?room=${encodeURIComponent(props.code)}`)
+})
 
 const copied = ref(false)
 
 const players = computed(() => state.value.players)
 const canStart = computed(() => players.value.length >= 3 && players.value.every((p) => p.ready))
 
-async function copyInvite() {
+async function copyCode() {
   try {
-    await navigator.clipboard.writeText(inviteUrl(props.code))
+    await navigator.clipboard.writeText(props.code)
     copied.value = true
     setTimeout(() => (copied.value = false), 1500)
   } catch {
@@ -73,9 +83,9 @@ const statusText = computed(() => {
         <button
           type="button"
           class="shrink-0 rounded-[8px] border border-hairline px-3 py-2 text-xs"
-          @click="copyInvite"
+          @click="copyCode"
         >
-          {{ copied ? '已复制' : '复制链接' }}
+          {{ copied ? '已复制' : '复制房间码' }}
         </button>
       </div>
     </section>

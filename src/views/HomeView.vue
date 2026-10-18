@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { goRoom } from '../app/router.ts'
 import { getNickname, normalizeRoomCode, randomRoomCode, setNickname } from '../app/session.ts'
 
 const nickname = ref(getNickname())
-const joinCode = ref('')
+// 从邀请链接跳回来时带着房间码，预填好，用户只需要补昵称。
+const joinCode = ref(new URLSearchParams(location.search).get('room') ?? '')
 const error = ref<string | null>(null)
 const showRules = ref(false)
+const nicknameInput = ref<HTMLInputElement | null>(null)
+
+// 从邀请链接跳回来时昵称是空的，直接把光标放进去，省一次点击。
+onMounted(() => {
+  if (!nickname.value.trim()) nicknameInput.value?.focus()
+})
 
 function rememberNickname() {
   setNickname(nickname.value)
@@ -49,6 +56,7 @@ function joinRoom() {
       <label class="flex flex-col gap-1.5">
         <span class="text-xs text-text-dim">昵称</span>
         <input
+          ref="nicknameInput"
           v-model="nickname"
           maxlength="12"
           placeholder="你的名字"
